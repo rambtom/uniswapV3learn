@@ -2,7 +2,8 @@
 pragma solidity ^0.8.14;
 import "./lib/Tick.sol";
 import "./lib/Position.sol";
-import "./interfaces/IUniswapV3MintCallBack.sol";
+import "./interfaces/IUniswapV3MintCallback.sol";
+import "./interfaces/IUniswapV3SwapCallback.sol";
 import "./interfaces/IERC20.sol";
 
 contract UniswapV3Pool {
@@ -24,6 +25,16 @@ contract UniswapV3Pool {
 		uint256 amount1
 	);
 
+	event Swap(
+		address indexed sender,
+		address indexed recipient,
+		int256 amount0,
+		int256 amount1,
+		uint160 sqrtPriceX96,
+		uint128 liquidity,
+		int24 tick
+	);
+
 	int24 internal constant MIN_TICK = -887272;
 	int24 internal constant MAX_TICK = -MIN_TICK;
 
@@ -34,6 +45,13 @@ contract UniswapV3Pool {
 		uint160 sqrtPriceX96;
 		int24 tick;
 	}
+
+	struct CallbackData {
+		address token0;
+		address token1;
+		address payer;
+	}
+
 	Slot0 public slot0;
 
 	uint128 public liquidity;
@@ -84,7 +102,7 @@ contract UniswapV3Pool {
 		uint256 balance1Before;
 		if (amount0 > 0) balance0Before = balance0();
 		if (amount1 > 0) balance1Before = balance1();
-		IUniswapV3MintCallBack(msg.sender).uniswapV3MintCallBack(
+		IUniswapV3MintCallback(msg.sender).uniswapV3MintCallback(
 			amount0,
 			amount1,
 			data
@@ -103,6 +121,38 @@ contract UniswapV3Pool {
 			amount,
 			amount0,
 			amount1
+		);
+	}
+
+	function swap(
+		address recipient,
+		bytes calldata data
+	) public returns (int256 amount0, int256 amount1) {
+		int24 nextTick = 85184;
+		uint160 nextPrice = 5604469350942327889444743441197;
+
+		amount0 = -0.008396714242162444 ether;
+		amount1 = 42 ether;
+
+		(slot0.tick, slot0.sqrtPriceX96) = (nextTick, nextPrice);
+
+		IERC20(token0).transfer(recipient, uint256(-amount0));
+		uint256 balance1Before = balance1();
+		IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(
+			amount0,
+			amount1,
+			data
+		);
+		if (balance1Before + uint256(amount1) > balance1())
+			revert InsufficientInputAmount();
+		emit Swap(
+			msg.sender,
+			recipient,
+			amount0,
+			amount1,
+			slot0.sqrtPriceX96,
+			liquidity,
+			slot0.tick
 		);
 	}
 
