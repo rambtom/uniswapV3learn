@@ -1,17 +1,19 @@
-// SPDX-License-Identifier: UNLICENSED
+//SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.14;
 
 import "forge-std/Test.sol";
 import "./ERC20Mintable.sol";
 import "./TestUtils.sol";
 import "../src/UniswapV3Pool.sol";
+import "../src/UniswapV3Manager.sol";
 import "forge-std/console.sol";
 
-contract UniswapV3PoolTest is Test, TestUtils {
+contract UniswapV3ManagerTest is Test, TestUtils {
 	// contract
 	ERC20Mintable token0;
 	ERC20Mintable token1;
 	UniswapV3Pool pool;
+	UniswapV3Manager manager;
 
 	bool transferInMintCallback = true;
 	bool transferInSwapCallback = true;
@@ -122,9 +124,10 @@ contract UniswapV3PoolTest is Test, TestUtils {
 			uint160(1),
 			0
 		);
+		manager = new UniswapV3Manager();
 
 		vm.expectRevert(encodeError("InvalidTickRange()"));
-		pool.mint(address(this), -887273, 0, 0, "");
+		manager.mint(address(pool), -887273, 0, 0, "");
 	}
 
 	function testMintInvalidTickRangeUpper() public {
@@ -134,9 +137,10 @@ contract UniswapV3PoolTest is Test, TestUtils {
 			uint160(1),
 			0
 		);
+		manager = new UniswapV3Manager();
 
 		vm.expectRevert(encodeError("InvalidTickRange()"));
-		pool.mint(address(this), 0, 887273, 0, "");
+		manager.mint(address(pool), 0, 887273, 0, "");
 	}
 
 	function testMintZeroLiquidity() public {
@@ -146,9 +150,10 @@ contract UniswapV3PoolTest is Test, TestUtils {
 			uint160(1),
 			0
 		);
+		manager = new UniswapV3Manager();
 
 		vm.expectRevert(encodeError("ZeroLiquidity()"));
-		pool.mint(address(this), -1, 0, 0, "");
+		manager.mint(address(pool), -1, 0, 0, "");
 	}
 
 	// have no token but execute mint
@@ -167,13 +172,22 @@ contract UniswapV3PoolTest is Test, TestUtils {
 		});
 		setupTestCase(params);
 
-		vm.expectRevert(encodeError("InsufficientInputAmount()"));
-		pool.mint(
-			address(this),
+		UniswapV3Pool.CallbackData memory extra = UniswapV3Pool.CallbackData({
+			token0: address(token0),
+			token1: address(token1),
+			payer: address(this)
+		});
+
+		// differrent from test of Pool contract, we can't avoid callback
+		// because manager contract has callback function
+		// so reverted Error occur in callback and not in InsufficientInputAmount()
+		vm.expectRevert(stdError.arithmeticError);
+		manager.mint(
+			address(pool),
 			params.lowerTick,
 			params.upperTick,
 			params.liquidity,
-			""
+			abi.encode(extra)
 		);
 	}
 
@@ -197,7 +211,7 @@ contract UniswapV3PoolTest is Test, TestUtils {
 		// mint swap token
 		uint256 swapAmount = 42 ether;
 		token1.mint(address(this), swapAmount);
-		token1.approve(address(this), swapAmount);
+		token1.approve(address(manager), swapAmount);
 		// It seems that token1 address has 42.8 ether. I don't know why.
 
 		UniswapV3Pool.CallbackData memory extra = UniswapV3Pool.CallbackData({
@@ -209,8 +223,8 @@ contract UniswapV3PoolTest is Test, TestUtils {
 		int256 userBalance0Before = int256(token0.balanceOf(address(this)));
 		int256 userBalance1Before = int256(token1.balanceOf(address(this)));
 
-		(int256 amount0Delta, int256 amount1Delta) = pool.swap(
-			address(this),
+		(int256 amount0Delta, int256 amount1Delta) = manager.swap(
+			address(pool),
 			false,
 			swapAmount,
 			abi.encode(extra)
@@ -267,8 +281,14 @@ contract UniswapV3PoolTest is Test, TestUtils {
 
 		setupTestCase(params);
 
-		vm.expectRevert(abi.encodeWithSignature("InsufficientInputAmount()"));
-		pool.swap(address(this), false, 42 ether, "");
+		UniswapV3Pool.CallbackData memory extra = UniswapV3Pool.CallbackData({
+			token0: address(token0),
+			token1: address(token1),
+			payer: address(this)
+		});
+
+		vm.expectRevert(stdError.arithmeticError);
+		manager.swap(address(pool), false, 42 ether, abi.encode(extra));
 	}
 
 	// test swap usdc
@@ -290,7 +310,7 @@ contract UniswapV3PoolTest is Test, TestUtils {
 		// swap amount
 		uint256 swapAmount = 5500 ether;
 		token1.mint(address(this), swapAmount);
-		token1.approve(address(this), swapAmount);
+		token1.approve(address(manager), swapAmount);
 
 		UniswapV3Pool.CallbackData memory extra = UniswapV3Pool.CallbackData({
 			token0: address(token0),
@@ -301,7 +321,7 @@ contract UniswapV3PoolTest is Test, TestUtils {
 		// stdError.arithmeticError
 		// the internal solidity error when an arithmetic operation fails.
 		vm.expectRevert(stdError.arithmeticError);
-		pool.swap(address(this), false, swapAmount, abi.encode(extra));
+		manager.swap(address(pool), false, swapAmount, abi.encode(extra));
 	}
 
 	// set pool contract
@@ -319,9 +339,11 @@ contract UniswapV3PoolTest is Test, TestUtils {
 			params.currentTick
 		);
 
+		manager = new UniswapV3Manager();
+
 		if (params.mintLiquidity) {
-			token0.approve(address(this), params.wethBalance);
-			token1.approve(address(this), params.usdcBalance);
+			token0.approve(address(manager), params.wethBalance);
+			token1.approve(address(manager), params.usdcBalance);
 
 			UniswapV3Pool.CallbackData memory extra = UniswapV3Pool
 				.CallbackData({
@@ -331,8 +353,8 @@ contract UniswapV3PoolTest is Test, TestUtils {
 				});
 
 			// mint liquidity
-			(poolBalance0, poolBalance1) = pool.mint(
-				address(this),
+			(poolBalance0, poolBalance1) = manager.mint(
+				address(pool),
 				params.lowerTick,
 				params.upperTick,
 				params.liquidity,
@@ -342,51 +364,5 @@ contract UniswapV3PoolTest is Test, TestUtils {
 
 		transferInMintCallback = params.transferInMintCallback;
 		transferInSwapCallback = params.transferInSwapCallback;
-	}
-
-	//pass tokens to owner
-	function uniswapV3MintCallback(
-		uint256 amount0,
-		uint256 amount1,
-		bytes calldata data
-	) public {
-		if (transferInMintCallback) {
-			UniswapV3Pool.CallbackData memory extra = abi.decode(
-				data,
-				(UniswapV3Pool.CallbackData)
-			);
-			IERC20(extra.token0).transferFrom(extra.payer, msg.sender, amount0);
-			IERC20(extra.token1).transferFrom(extra.payer, msg.sender, amount1);
-		}
-	}
-
-	// pass token to owner
-	function uniswapV3SwapCallback(
-		int256 amount0,
-		int256 amount1,
-		bytes calldata data
-	) public {
-		if (transferInSwapCallback) {
-			UniswapV3Pool.CallbackData memory extra = abi.decode(
-				data,
-				(UniswapV3Pool.CallbackData)
-			);
-
-			if (amount0 > 0) {
-				IERC20(extra.token0).transferFrom(
-					extra.payer,
-					msg.sender,
-					uint256(amount0)
-				);
-			}
-
-			if (amount1 > 0) {
-				IERC20(extra.token1).transferFrom(
-					extra.payer,
-					msg.sender,
-					uint256(amount1)
-				);
-			}
-		}
 	}
 }
