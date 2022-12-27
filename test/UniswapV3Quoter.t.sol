@@ -73,7 +73,7 @@ contract UniswapV3QuoterTest is Test, TestUtils {
 		quoter = new UniswapV3Quoter();
 	}
 
-	function testQuoteSwapBuyEth() public {
+	function testQuoteBuyEth() public {
 		uint256 swapAmount = 42 ether;
 		UniswapV3Quoter.Quoteparams memory quoterparams = UniswapV3Quoter
 			.Quoteparams({
@@ -94,5 +94,44 @@ contract UniswapV3QuoterTest is Test, TestUtils {
 		);
 
 		assertEq(tickAfter, 85184, "invalid quote tick");
+	}
+
+	function testQuoteAndSwapBuyUSDC() public {
+		uint256 swapAmount = 0.1 ether;
+		(uint256 amountOut, , ) = quoter.quote(
+			UniswapV3Quoter.Quoteparams({
+				pool: address(pool),
+				amountIn: swapAmount,
+				zeroForOne: true
+			})
+		);
+		// console.log(amountOut);
+
+		bytes memory extra = encodeExtra(
+			address(token0),
+			address(token1),
+			address(this)
+		);
+
+		token0.mint(address(this), swapAmount);
+		token0.approve(address(manager), swapAmount);
+
+		(int256 amount0, int256 amount1) = manager.swap(
+			address(pool),
+			true,
+			swapAmount,
+			extra
+		);
+
+		assertEq(
+			swapAmount,
+			uint256(amount0),
+			"invalid USDC amount between quote and swap"
+		);
+		assertEq(
+			amountOut,
+			uint256(-amount1),
+			"invalid Eth amount between quote and swap"
+		);
 	}
 }
