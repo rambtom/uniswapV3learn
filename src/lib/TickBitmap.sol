@@ -44,7 +44,9 @@ library TickBitmap {
 					)) * tickSpacing
 				: (compressed - int24(uint24(bitPos))) * tickSpacing;
 		} else {
-			(int16 wordPos, uint8 bitPos) = position(compressed);
+			// start from the word of the next tick, since the current tick state doesn't matter
+			// 111110 <- bitpos
+			(int16 wordPos, uint8 bitPos) = position(compressed + 1);
 			uint256 mask = ~((1 << bitPos) - 1);
 			uint256 masked = self[wordPos] & mask;
 

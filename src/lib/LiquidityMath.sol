@@ -58,13 +58,13 @@ library LiquidityMath {
 			);
 		} else if (sqrtPriceX96 <= sqrtPriceBX96) {
 			uint128 liquidity0 = getLiquidityForAmount0(
-				sqrtPriceAX96,
+				sqrtPriceX96,
 				sqrtPriceBX96,
 				amount0
 			);
 			uint128 liquidity1 = getLiquidityForAmount1(
 				sqrtPriceAX96,
-				sqrtPriceBX96,
+				sqrtPriceX96,
 				amount1
 			);
 
@@ -85,7 +85,7 @@ library LiquidityMath {
 		if (y < 0) {
 			z = x - uint128(-y);
 		} else {
-			z = x - uint128(y);
+			z = x + uint128(y);
 		}
 	}
 }
